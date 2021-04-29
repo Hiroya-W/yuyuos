@@ -17,13 +17,12 @@ struct MemoryMap {
 };
 
 EFI_STATUS GetMemoryMap(struct MemoryMap* map) {
-    if (map->buffer == NULL) {
+    if(map->buffer == NULL) {
         return EFI_BUFFER_TOO_SMALL;
     }
 
     map->map_size = map->buffer_size;
-    return gBS->GetMemoryMap(
-        &map->map_size,
+    return gBS->GetMemoryMap(&map->map_size,
         (EFI_MEMORY_DESCRIPTOR*)map->buffer,
         &map->map_key,
         &map->descriptor_size,
@@ -31,41 +30,24 @@ EFI_STATUS GetMemoryMap(struct MemoryMap* map) {
 }
 
 const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
-    switch (type) {
-        case EfiReservedMemoryType:
-            return L"EfiReservedMemoryType";
-        case EfiLoaderCode:
-            return L"EfiLoaderCode";
-        case EfiLoaderData:
-            return L"EfiLoaderData";
-        case EfiBootServicesCode:
-            return L"EfiBootServicesCode";
-        case EfiBootServicesData:
-            return L"EfiBootServicesData";
-        case EfiRuntimeServicesCode:
-            return L"EfiRuntimeServicesCode";
-        case EfiRuntimeServicesData:
-            return L"EfiRuntimeServicesData";
-        case EfiConventionalMemory:
-            return L"EfiConventionalMemory";
-        case EfiUnusableMemory:
-            return L"EfiUnusableMemory";
-        case EfiACPIReclaimMemory:
-            return L"EfiACPIReclaimMemory";
-        case EfiACPIMemoryNVS:
-            return L"EfiACPIMemoryNVS";
-        case EfiMemoryMappedIO:
-            return L"EfiMemoryMappedIO";
-        case EfiMemoryMappedIOPortSpace:
-            return L"EfiMemoryMappedIOPortSpace";
-        case EfiPalCode:
-            return L"EfiPalCode";
-        case EfiPersistentMemory:
-            return L"EfiPersistentMemory";
-        case EfiMaxMemoryType:
-            return L"EfiMaxMemoryType";
-        default:
-            return L"InvalidMemoryType";
+    switch(type) {
+        case EfiReservedMemoryType: return L"EfiReservedMemoryType";
+        case EfiLoaderCode: return L"EfiLoaderCode";
+        case EfiLoaderData: return L"EfiLoaderData";
+        case EfiBootServicesCode: return L"EfiBootServicesCode";
+        case EfiBootServicesData: return L"EfiBootServicesData";
+        case EfiRuntimeServicesCode: return L"EfiRuntimeServicesCode";
+        case EfiRuntimeServicesData: return L"EfiRuntimeServicesData";
+        case EfiConventionalMemory: return L"EfiConventionalMemory";
+        case EfiUnusableMemory: return L"EfiUnusableMemory";
+        case EfiACPIReclaimMemory: return L"EfiACPIReclaimMemory";
+        case EfiACPIMemoryNVS: return L"EfiACPIMemoryNVS";
+        case EfiMemoryMappedIO: return L"EfiMemoryMappedIO";
+        case EfiMemoryMappedIOPortSpace: return L"EfiMemoryMappedIOPortSpace";
+        case EfiPalCode: return L"EfiPalCode";
+        case EfiPersistentMemory: return L"EfiPersistentMemory";
+        case EfiMaxMemoryType: return L"EfiMaxMemoryType";
+        default: return L"InvalidMemoryType";
     }
 }
 
@@ -81,15 +63,19 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
 
     EFI_PHYSICAL_ADDRESS iter;
     int i;
-    for (iter = (EFI_PHYSICAL_ADDRESS)map->buffer, i = 0;
-         iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;
-         iter += map->descriptor_size, i++) {
+    for(iter = (EFI_PHYSICAL_ADDRESS)map->buffer, i = 0;
+        iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;
+        iter += map->descriptor_size, i++)
+    {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*)iter;
-        len = AsciiSPrint(
-            buf, sizeof(buf),
+        len = AsciiSPrint(buf,
+            sizeof(buf),
             "%u, %x, %-ls, %08lx, %lx, %lx\n",
-            i, desc->Type, GetMemoryTypeUnicode(desc->Type),
-            desc->PhysicalStart, desc->NumberOfPages,
+            i,
+            desc->Type,
+            GetMemoryTypeUnicode(desc->Type),
+            desc->PhysicalStart,
+            desc->NumberOfPages,
             desc->Attribute & 0xffffflu);
         file->Write(file, &len, buf);
     }
@@ -100,16 +86,14 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
     EFI_LOADED_IMAGE_PROTOCOL* loaded_image;
     EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* fs;
 
-    gBS->OpenProtocol(
-        image_handle,
+    gBS->OpenProtocol(image_handle,
         &gEfiLoadedImageProtocolGuid,
         (VOID**)&loaded_image,
         image_handle,
         NULL,
         EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
 
-    gBS->OpenProtocol(
-        loaded_image->DeviceHandle,
+    gBS->OpenProtocol(loaded_image->DeviceHandle,
         &gEfiSimpleFileSystemProtocolGuid,
         (VOID**)&fs,
         image_handle,
@@ -132,8 +116,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
     OpenRootDir(image_handle, &root_dir);
 
     EFI_FILE_PROTOCOL* memmap_file;
-    root_dir->Open(
-        root_dir,
+    root_dir->Open(root_dir,
         &memmap_file,
         L"\\memmap",
         EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,
@@ -144,7 +127,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
 
     Print(L"All done\n");
 
-    while (1)
+    while(1)
         ;
     return EFI_SUCCESS;
 }
