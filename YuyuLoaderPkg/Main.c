@@ -1,3 +1,4 @@
+#include <Guid/FileInfo.h>
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -17,7 +18,7 @@ struct MemoryMap {
 };
 
 EFI_STATUS GetMemoryMap(struct MemoryMap* map) {
-    if(map->buffer == NULL) {
+    if (map->buffer == NULL) {
         return EFI_BUFFER_TOO_SMALL;
     }
 
@@ -30,7 +31,7 @@ EFI_STATUS GetMemoryMap(struct MemoryMap* map) {
 }
 
 const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
-    switch(type) {
+    switch (type) {
         case EfiReservedMemoryType: return L"EfiReservedMemoryType";
         case EfiLoaderCode: return L"EfiLoaderCode";
         case EfiLoaderData: return L"EfiLoaderData";
@@ -63,9 +64,9 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
 
     EFI_PHYSICAL_ADDRESS iter;
     int i;
-    for(iter = (EFI_PHYSICAL_ADDRESS)map->buffer, i = 0;
-        iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;
-        iter += map->descriptor_size, i++)
+    for (iter = (EFI_PHYSICAL_ADDRESS)map->buffer, i = 0;
+         iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;
+         iter += map->descriptor_size, i++)
     {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*)iter;
         len = AsciiSPrint(buf,
@@ -124,10 +125,64 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
 
     SaveMemoryMap(&memmap, memmap_file);
     memmap_file->Close(memmap_file);
+    EFI_FILE_PROTOCOL* kernel_file;
+    root_dir->Open(root_dir, &kernel_file, L"\\kernel.elf", EFI_FILE_MODE_READ, 0);
+
+    // kernel.elf の12文字(塗る文字を含む)分 = sizeof(CHAR16) * 12だけ余分に確保する
+    UINTN file_info_size = sizeof(EFI_FILE_INFO) + sizeof(CHAR16) * 12;
+    UINT8 file_info_buffer[file_info_size];
+    // ファイル情報を取得する
+    kernel_file->GetInfo(kernel_file, &gEfiFileInfoGuid, &file_info_size, file_info_buffer);
+
+    // UINT8からEFI_FILE_INFOにキャストして、FileSizeを取り出す
+    EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
+    UINTN kernel_file_size = file_info->FileSize;    // バイト単位
+
+    EFI_PHYSICAL_ADDRESS kernel_base_addr = 0x100000;    // カーネルファイルを配置するアドレス
+    // ファイルを格納できる十分な大きさのメモリ領域を確保する
+    gBS->AllocatePages(AllocateAddress,    //メモリの確保の仕方
+        EfiLoaderData,                     // 確保するメモリ領域の種別
+                                           // ページ単位の大きさ(1ページ4KiB = 0x100)
+                                           // 0xfffは切り上げ
+        (kernel_file_size + 0xfff) / 0x1000,
+        &kernel_base_addr    // 確保したメモリ領域のアドレス
+    );
+    // ファイルを読み込む
+    kernel_file->Read(kernel_file, &kernel_file_size, (VOID*)kernel_base_addr);
+    Print(L"Kernel: 0x%0lx (%lu bytes)\n", kernel_base_addr, kernel_file_size);
+
+    EFI_STATUS status;
+    // ブートサービスを停止する
+    status = gBS->ExitBootServices(image_handle, memmap.map_key);
+    // map_keyが最新ではない時、エラーになる
+    if (EFI_ERROR(status)) {
+        // 再取得する
+        status = GetMemoryMap(&memmap);
+        if (EFI_ERROR(status)) {
+            Print(L"failed to get memory map: %r\n", status);
+            while (1)
+                ;
+        }
+        status = gBS->ExitBootServices(image_handle, memmap.map_key);
+        if (EFI_ERROR(status)) {
+            Print(L"Could not exit boot service: %r\n", status);
+            while (1)
+                ;
+        }
+    }
+
+    // 64bit ELFにおいて、KernelMain()の実態が置かれているアドレス
+    UINT64 entry_addr = *(UINT64*)(kernel_base_addr + 24);
+
+    // 引数と戻り値をvoid型とする関数型をEntryPointTypeとしてエイリアスする
+    typedef void EntryPointType(void);
+    EntryPointType* entry_point = (EntryPointType*)entry_addr;
+    // カーネルを起動する
+    entry_point();
 
     Print(L"All done\n");
 
-    while(1)
+    while (1)
         ;
     return EFI_SUCCESS;
 }
