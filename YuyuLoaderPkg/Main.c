@@ -24,6 +24,16 @@ EFI_STATUS GetMemoryMap(struct MemoryMap* map) {
     }
 
     map->map_size = map->buffer_size;
+    // OSを起動するために必要な機能を提供するブートサービス: gBS
+    // 関数呼び出し時点でのメモリマップを取得する
+    /* map_size            IN: メモリマップ書き込み用のメモリ領域の大きさ
+     *                     OUT: 実際のメモリマップの大きさ
+     * map_buffer          IN: メモリマップ書き込み用のメモリ領域の先頭ポインタ
+     *                     OUT: メモリマップが書き込まれる
+     * map_key             OUT: メモリマップを識別するための値を書き込む変数
+     * descriptor_size     OUT: メモリマップの個々の行を表すメモリディスクリプタのバイト数
+     * descriptor_version: OUT: メモリディスクリプタの構造体のバージョン番号
+     */
     return gBS->GetMemoryMap(&map->map_size,
         (EFI_MEMORY_DESCRIPTOR*)map->buffer,
         &map->map_key,
@@ -31,6 +41,7 @@ EFI_STATUS GetMemoryMap(struct MemoryMap* map) {
         &map->descriptor_version);
 }
 
+// メモリディスクリプタのタイプ値からタイプ名を取得して返す関数
 const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
     switch (type) {
         case EfiReservedMemoryType: return L"EfiReservedMemoryType";
@@ -53,6 +64,7 @@ const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
     }
 }
 
+// 引数で与えられたメモリマップ情報をCSV形式でファイルに書き出す関数
 EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
     EFI_STATUS status;
     CHAR8 buf[256];
@@ -60,6 +72,7 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
 
     CHAR8* header = "Index, Type, Type(name), PhysicalStart, NumberOfPages, Attribute\n";
     len = AsciiStrLen(header);
+    // ヘッダ行を出力する
     status = file->Write(file, &len, header);
     if (EFI_ERROR(status)) {
         return status;
@@ -69,20 +82,25 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
 
     EFI_PHYSICAL_ADDRESS iter;
     int i;
+    // メモリマップの各行をカンマ区切りで出力
     for (iter = (EFI_PHYSICAL_ADDRESS)map->buffer, i = 0;
          iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;
          iter += map->descriptor_size, i++)
     {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*)iter;
-        len = AsciiSPrint(buf,
+        // メモリディスクリプタの値を文字列変換する
+        len = AsciiSPrint(buf,    // 整形した文字列がbufに書き込まれる
             sizeof(buf),
             "%u, %x, %-ls, %08lx, %lx, %lx\n",
             i,
             desc->Type,
-            GetMemoryTypeUnicode(desc->Type),
+            GetMemoryTypeUnicode(desc->Type),    // メモリディスクリプタのタイプ値からタイプ名を取得
             desc->PhysicalStart,
             desc->NumberOfPages,
             desc->Attribute & 0xffffflu);
+        // ファイルに文字列を書き出す
+        // len IN: 文字列のバイト数
+        //     OUT: 実際にファイルに書き出されたバイト数
         status = file->Write(file, &len, buf);
         if (EFI_ERROR(status)) {
             return status;
@@ -91,6 +109,7 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
     return EFI_SUCCESS;
 }
 
+// 書き込み先のファイルを開く
 EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
     EFI_STATUS status;
     EFI_LOADED_IMAGE_PROTOCOL* loaded_image;
@@ -170,7 +189,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
 
     Print(L"Hello, Yuyu World!\n");
 
-    CHAR8 memmap_buf[4096 * 4];
+    CHAR8 memmap_buf[4096 * 4];    // メモリマップ用に16KiB確保しておく
     struct MemoryMap memmap = {sizeof(memmap_buf), memmap_buf, 0, 0, 0, 0};
     status = GetMemoryMap(&memmap);
     if (EFI_ERROR(status)) {
@@ -186,6 +205,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
     }
 
     EFI_FILE_PROTOCOL* memmap_file;
+    // memmapというファイルを書き込みモードで開く
     status = root_dir->Open(root_dir,
         &memmap_file,
         L"\\memmap",
@@ -195,6 +215,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
         Print(L"failed to open file '\\memmap': %r\n", status);
         Print(L"Ignored.\n");
     } else {
+        // 取得したメモリマップをmemmapに保存する
         status = SaveMemoryMap(&memmap, memmap_file);
         if (EFI_ERROR(status)) {
             Print(L"failed to save memory map: %r\n", status);
