@@ -235,6 +235,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE* system_tab
     status = OpenGOP(image_handle, &gop);    // gopに値をセットする
     if (EFI_ERROR(status)) {
         Print(L"failed to open GOP: %r\n", status);
+        Halt();
     }
 
     Print(L"Resolution: %ux%u, Pixel Format: %s, %u pixels/line\n",
